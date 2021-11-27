@@ -31,7 +31,7 @@ const log = (name, ...args) => {
 };
 
 const url = new URL(document.URL);
-if (['pc-play.games.dmm.com', 'pc-play.games.dmm.co.jp'].includes(url.host)) {
+if (["pc-play.games.dmm.com", "pc-play.games.dmm.co.jp"].includes(url.host)) {
     document
         .querySelector(`link[rel="icon"]`)
         .setAttribute(
@@ -140,16 +140,15 @@ const addLaoplusButton = () => {
 };
 addLaoplusButton();
 
-const config = GM_getValue("config");
-if (config === undefined) {
-    log("Setting", "Config not found. Initialize...", config);
-
-    _.set(config, "features.discordNotification.enabled", false);
-    _.set(config, "features.discordNotification.webhookURL", "");
-
-    GM_setValue("config", config);
-    log("Setting", "Config Saved", config);
-}
+const defaultConfig = {
+    features: {
+        discordNotification: {
+            enabled: false,
+            webhookURL: "",
+        },
+    },
+};
+const config = GM_getValue("config", defaultConfig);
 log("Config", "Config Loaded", config);
 
 MicroModal.init({
