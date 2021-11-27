@@ -1,7 +1,7 @@
 // ==UserScript==
 // @namespace   net.mizle
 // @name        LAOPLUS
-// @version     0.0.1
+// @version     0.0.2
 // @match       https://pc-play.games.dmm.co.jp/play/lastorigin_r/*
 // @match       https://pc-play.games.dmm.com/play/lastorigin/*
 // @match       https://osapi.dmm.com/gadgets/ifr?synd=dmm&container=dmm&owner=*&viewer=*&aid=616121&*
