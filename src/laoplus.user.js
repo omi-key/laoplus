@@ -133,6 +133,7 @@ log("Game Page", "Style & Modal injected.");
 
 const game = document.querySelector("canvas");
 const body = document.body;
+var exploration = [];
 
 const addLaoplusButton = () => {
     const html = `<button class="laoplus-button absolute bottom-0 left-0 transition" data-micromodal-trigger="laoplus-modal">➕</button>`;
@@ -216,6 +217,33 @@ const sendToDiscordWebhook = (body) => {
     });
 };
 
+const ExplorationDiscordNotification = () => {
+    const fields = exploration.map((ex) => {
+        const endDateTime = new Date(ex.EndTime * 1000);
+        const dateTimeValue = (ex.EndTime * 1000 < Date.now()) ? 
+            ('**' + endDateTime.toLocaleTimeString() + '**') :
+            endDateTime.toLocaleTimeString();
+        return {
+            name: ex.StageKeyString,
+            value: dateTimeValue,
+            inline: true,
+            endDateTime: endDateTime
+        }
+    }).sort((a,b) => 
+        a.endDateTime - b.endDateTime
+    ).map((ex) => {
+        delete ex.endDateTime;
+        return ex;
+    });
+    sendToDiscordWebhook({
+        embeds: [
+            {
+                "fields": fields
+            }
+        ]
+    });
+}
+
 const interceptor = (xhr) => {
     if (!xhr.responseURL) return;
     const url = new URL(xhr.responseURL);
@@ -245,6 +273,35 @@ const interceptor = (xhr) => {
                 sendToDiscordWebhook({ embeds: embeds });
             }
         }
+    } else if (url.pathname === "/exploration_inginfo") {
+        exploration.forEach((ex) => {
+            if (ex.timeoutID) {
+                clearTimeout(ex.timeoutID);
+            }
+        })
+        exploration = res.ExplorationList;
+        ExplorationDiscordNotification(); // いらんかも
+        exploration = exploration.map((ex) => {
+            const milisecondsToFinish = ex.EndTime * 1000 - Date.now();
+            if (milisecondsToFinish > 0) {
+                const timeoutID = setTimeout(ExplorationDiscordNotification, milisecondsToFinish);
+                return {...ex, timeoutID: timeoutID};
+            } else {
+                return ex;
+            }
+        })
+    } else if (url.pathname === "/exploration_enter") {
+        const milisecondsToFinish = res.EnterInfo.EndTime * 1000 - Date.now();
+        const timeoutID = setTimeout(ExplorationDiscordNotification, milisecondsToFinish);
+        exploration.push({...(res.EnterInfo), timeoutID: timeoutID});
+        ExplorationDiscordNotification();
+    } else if (url.pathname === "/exploration_reward") {
+        exploration = exploration.filter((ex) => ex.SquadIndex !== res.SquadIndex);
+    } else if (url.pathname === "/exploration_cancel") {
+        const targetExploration = exploration.find((ex) => ex.SquadIndex === res.SquadIndex);
+        if (targetExploration && targetExploration.timeoutID)
+            clearTimeout(targetExploration.timeoutID)
+        exploration = exploration.filter((ex) => ex.SquadIndex !== res.SquadIndex);
     }
 };
 
