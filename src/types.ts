@@ -24,3 +24,16 @@ export interface ExplorationSquad {
     // Status: number;
     timeoutID: number | undefined;
 }
+
+export interface CreatePCInfo {
+    PCId: string;
+    Index: number;
+    Grade: number;
+    Level: number;
+}
+
+export interface UpdateItemInfo {
+    ItemKeyString: string;
+    StackCount: number;
+    Grade: number;
+}

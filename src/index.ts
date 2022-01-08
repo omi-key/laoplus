@@ -5,7 +5,7 @@ import { initUi } from "ui/index";
 import { initInterceptor } from "features/interceptor";
 import { initResizeObserver } from "features/resizeObserver";
 import { initTacticsManual } from "tacticsManual";
-import { TacticsManualUnit, ExplorationSquad } from "./types";
+import { TacticsManualUnit, ExplorationSquad, CreatePCInfo, UpdateItemInfo } from "./types";
 import { tailwindConfig, initTailwindCustomStyle } from "./ui/tailwind";
 import { initInputObserver } from "./features/inputObserver";
 import { initWheelAmplfy } from "./features/wheelAmplify";
@@ -22,6 +22,21 @@ declare global {
             };
             exploration: ExplorationSquad[];
             status: Status;
+            battleState: {
+                MobGroupKeys: string[];
+                waveStep: number | null;
+                dropPC: {
+                    mobGroupKey: string;
+                    stageKeyString: string | undefined;
+                    pcInfo: CreatePCInfo;
+                }[];
+                dropItem: {
+                    mobGroupKey: string,
+                    stageKeyString: string | undefined,
+                    itemInfo: UpdateItemInfo;
+                }[];
+            };
+            
         };
     }
 }
@@ -43,6 +58,12 @@ declare global {
         },
         exploration: [],
         status: status,
+        battleState: {
+            MobGroupKeys: [],
+            waveStep: 0,
+            dropPC: [],
+            dropItem: []
+        }
     };
 
     // @ts-ignore
