@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name        LAOPLUS-DEVELOP
 // @namespace   net.mizle
-// @version     1640779885-a1ead8ad98faea4717eaf9cb250cbae73515720d
+// @version     1641608248-43820573e689055895076804ee0f70cd55710e8f
 // @author      Eai <eai@mizle.net>
 // @description ブラウザ版ラストオリジンのプレイを支援する Userscript
 // @homepageURL https://github.com/eai04191/laoplus
@@ -809,7 +809,7 @@ i.bi {
     };
 
     // TODO: 型を用意してanyをキャストする
-    const invoke$2 = ({ res, url }) => {
+    const invoke$3 = ({ res, url }) => {
         switch (url.pathname) {
             case "/exploration_inginfo":
                 loginto(res);
@@ -922,7 +922,7 @@ i.bi {
     };
 
     // TODO: 渡す前にキャストする
-    const invoke$1 = ({ res, url }) => {
+    const invoke$2 = ({ res, url }) => {
         switch (url.pathname) {
             case "/wave_clear":
                 PcDropNotification(res);
@@ -993,13 +993,147 @@ i.bi {
         log.log("Autorun Detection", "Set Enter Timer", delay);
     };
 
-    const invoke = ({ url }) => {
+    const invoke$1 = ({ url }) => {
         switch (url.pathname) {
             case "/battleserver_enter":
                 if (unsafeWindow.LAOPLUS.config.config.features.autorunDetection
                     .enabled) {
                     enter();
                 }
+                return;
+        }
+    };
+
+    const dropHistoryDBName = 'laoplusDropHistoryDB';
+    const dropHistoryDBVersion = 1;
+    const initializeBattleState = ({ MonsterList }) => {
+        unsafeWindow.LAOPLUS.battleState.MobGroupKeys = [];
+        // unique な wave name を追加。敵のいない wave があると崩壊する
+        for (const mob of MonsterList) {
+            if (unsafeWindow.LAOPLUS.battleState.MobGroupKeys.indexOf(mob.MobGroupKeyString) < 0)
+                unsafeWindow.LAOPLUS.battleState.MobGroupKeys.push(mob.MobGroupKeyString);
+        }
+        unsafeWindow.LAOPLUS.battleState.waveStep = 0;
+        unsafeWindow.LAOPLUS.battleState.dropPC = [];
+        unsafeWindow.LAOPLUS.battleState.dropItem = [];
+    };
+    const recordDropHistory = ({ CreatePCInfos, UpdateItemInfos }) => {
+        if (typeof unsafeWindow.LAOPLUS.battleState.waveStep !== 'number' ||
+            unsafeWindow.LAOPLUS.battleState.waveStep >= unsafeWindow.LAOPLUS.battleState.MobGroupKeys.length) {
+            log.error('DropHistory', 'BattleState Error: Illegal WaveStep', unsafeWindow.LAOPLUS.battleState);
+            return;
+        }
+        const MobGroupKey = unsafeWindow.LAOPLUS.battleState.MobGroupKeys[unsafeWindow.LAOPLUS.battleState.waveStep];
+        if (!MobGroupKey) {
+            log.error('DropHistory', 'BattleState Error: Illegal WaveStep', unsafeWindow.LAOPLUS.battleState);
+            return;
+        }
+        unsafeWindow.LAOPLUS.battleState.waveStep += 1;
+        // stagekeystring がわからないので unsafeWindow 以下の Array に仮置き
+        CreatePCInfos.forEach((pc) => {
+            unsafeWindow.LAOPLUS.battleState.dropPC.push({
+                mobGroupKey: MobGroupKey,
+                stageKeyString: undefined,
+                pcInfo: {
+                    PCId: pc.PCId,
+                    Index: pc.Index,
+                    Grade: pc.Grade,
+                    Level: pc.Level,
+                },
+            });
+        });
+        UpdateItemInfos.forEach((item) => {
+            if (item.UpdateType !== 0)
+                return;
+            const itemGrade = (/.*_T(\d)/).exec(item.Info.ItemKeyString);
+            if (!itemGrade || !itemGrade[1])
+                return;
+            unsafeWindow.LAOPLUS.battleState.dropItem.push({
+                mobGroupKey: MobGroupKey,
+                stageKeyString: undefined,
+                itemInfo: {
+                    ItemKeyString: item.Info.ItemKeyString,
+                    StackCount: item.Info.StackCount,
+                    Grade: Number(itemGrade[1])
+                }
+            });
+        });
+    };
+    const insertDropHistory = ({ StageKeyString }) => {
+        log.debug('DropHistory', 'Insert:', StageKeyString, unsafeWindow.LAOPLUS.battleState);
+        const createdAt = new Date();
+        const dbOpenRequest = indexedDB.open(dropHistoryDBName, dropHistoryDBVersion);
+        dbOpenRequest.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            const pcStore = db.createObjectStore('pcInfo', { keyPath: 'serialId', autoIncrement: true });
+            pcStore.createIndex('mobGroupKey', 'mobGroupKey', { unique: false });
+            pcStore.createIndex('stageKeyString', 'stageKeyString', { unique: false });
+            pcStore.createIndex('createdAt', 'createdAt', { unique: false });
+            pcStore.createIndex('pcIndex', 'pcInfo.Index', { unique: false });
+            const itemStore = db.createObjectStore('itemInfo', { keyPath: 'serialId', autoIncrement: true });
+            itemStore.createIndex('mobGroupKey', 'mobGroupKey', { unique: false });
+            itemStore.createIndex('stageKeyString', 'stageKeyString', { unique: false });
+            itemStore.createIndex('createdAt', 'createdAt', { unique: false });
+            itemStore.createIndex('itemIndex', 'itemInfo.ItemKeyString', { unique: false });
+            const stageClearCountStore = db.createObjectStore('stageClear', { keyPath: 'createdAt' });
+            stageClearCountStore.createIndex('stageKeyString', 'stageKeyString', { unique: false });
+            log.debug('DropHistory', 'IDB Created');
+        };
+        dbOpenRequest.onsuccess = (event) => {
+            const db = event.target.result;
+            const tx = db.transaction(['pcInfo', 'itemInfo', 'stageClear'], 'readwrite');
+            tx.oncomplete = () => {
+                log.debug('DropHistory', 'IDB Insert Succeeded');
+            };
+            tx.onerror = (ev) => {
+                log.error('DropHistory', 'IDB Insert Error!', ev);
+            };
+            const pcInfoStore = tx.objectStore('pcInfo');
+            unsafeWindow.LAOPLUS.battleState.dropPC.forEach((pcInfo) => {
+                const req = pcInfoStore.add({
+                    ...pcInfo,
+                    stageKeyString: StageKeyString,
+                    createdAt: createdAt
+                });
+                req.onerror = (ev) => {
+                    log.error('DropHistory', 'Insert into PCInfoStore was failed:', ev);
+                };
+            });
+            const itemInfoStore = tx.objectStore('itemInfo');
+            unsafeWindow.LAOPLUS.battleState.dropItem.forEach((itemInfo) => {
+                const req = itemInfoStore.add({
+                    ...itemInfo,
+                    stageKeyString: StageKeyString,
+                    createdAt: createdAt
+                });
+                req.onerror = (ev) => {
+                    log.error('DropHistory', 'Insert into ItemInfoStore was failed:', ev);
+                };
+            });
+            const stageClearCountStore = tx.objectStore('stageClear');
+            const clearCountUpsertRequest = stageClearCountStore.add({
+                stageKeyString: StageKeyString,
+                createdAt: createdAt
+            });
+            clearCountUpsertRequest.onerror = (ev) => {
+                log.error('DropHistory', 'Insert into ClearCountStore was failed:', ev);
+            };
+            db.close();
+        };
+        unsafeWindow.LAOPLUS.battleState.waveStep = null;
+    };
+
+    // TODO: 型を用意してanyをキャストする
+    const invoke = ({ res, url }) => {
+        switch (url.pathname) {
+            case "/battleserver_enter":
+                initializeBattleState(res);
+                return;
+            case "/wave_clear":
+                recordDropHistory(res);
+                return;
+            case "/stage_clear":
+                insertDropHistory(res);
                 return;
         }
     };
@@ -1018,6 +1152,7 @@ i.bi {
             log.debug("Interceptor", url.pathname, res);
             const invokeProps = { xhr, res, url };
             // TODO: このような処理をここに書くのではなく、各種機能がここを購読しに来るように分離したい
+            invoke$3(invokeProps);
             invoke$2(invokeProps);
             invoke$1(invokeProps);
             invoke(invokeProps);
@@ -1274,6 +1409,12 @@ i.bi {
             },
             exploration: [],
             status: status,
+            battleState: {
+                MobGroupKeys: [],
+                waveStep: 0,
+                dropPC: [],
+                dropItem: []
+            }
         };
         // @ts-ignore
         tailwind.config = tailwindConfig;
